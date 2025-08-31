@@ -94,46 +94,268 @@ function SecurityDashboard() {
 }
 ```
 
-### Real-time Updates
+### Real-time Updates & Event Handling
 
 ```tsx
 import React from 'react';
-import { VeliKeySDK } from '@velikey/sdk';
+import { VeliKeySDK, SecurityAlert, AgentStatus } from '@velikey/sdk';
+import { toast } from 'react-toastify';
+
+interface AlertsState {
+  alerts: SecurityAlert[];
+  loading: boolean;
+  connected: boolean;
+}
 
 function RealTimeAlerts() {
-  const [alerts, setAlerts] = React.useState([]);
-  const client = React.useRef(new VeliKeySDK({ apiKey: 'your-key' }));
+  const [state, setState] = React.useState<AlertsState>({
+    alerts: [],
+    loading: true,
+    connected: false
+  });
+  
+  const client = React.useRef(new VeliKeySDK({ 
+    apiKey: process.env.REACT_APP_VELIKEY_API_KEY!,
+    enableRealtime: true,
+    reconnectAttempts: 5
+  }));
   
   React.useEffect(() => {
-    // Subscribe to real-time alerts
-    client.current.subscribeToEvents(['alert', 'agent.status']);
+    const initializeRealtime = async () => {
+      try {
+        // Load initial alerts
+        const initialAlerts = await client.current.monitoring.getActiveAlerts();
+        setState(prev => ({ 
+          ...prev, 
+          alerts: initialAlerts, 
+          loading: false 
+        }));
+        
+        // Subscribe to real-time events
+        await client.current.subscribeToEvents([
+          'alert.*',           // All alert events
+          'agent.status',      // Agent status changes
+          'policy.deployed',   // Policy deployments
+          'compliance.failed'  // Compliance failures
+        ]);
+        
+        setState(prev => ({ ...prev, connected: true }));
+        
+        // Event handlers
+        client.current.on('alert:created', (alert: SecurityAlert) => {
+          setState(prev => ({
+            ...prev,
+            alerts: [alert, ...prev.alerts]
+          }));
+          
+          // Show toast notification
+          toast[alert.severity](`${alert.title}: ${alert.description}`);
+        });
+        
+        client.current.on('alert:resolved', (alertId: string) => {
+          setState(prev => ({
+            ...prev,
+            alerts: prev.alerts.filter(alert => alert.id !== alertId)
+          }));
+          
+          toast.success('Alert resolved');
+        });
+        
+        client.current.on('alert:critical', (alert: SecurityAlert) => {
+          // Handle critical alerts immediately
+          handleCriticalAlert(alert);
+          
+          // Play sound notification
+          playAlertSound('critical');
+          
+          // Send desktop notification if permitted
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(`Critical Security Alert: ${alert.title}`, {
+              body: alert.description,
+              icon: '/critical-alert-icon.png',
+              requireInteraction: true
+            });
+          }
+        });
+        
+        client.current.on('agent.status', (event: AgentStatus) => {
+          if (event.status === 'offline') {
+            toast.warning(`Agent ${event.name} went offline`);
+          } else if (event.status === 'online') {
+            toast.success(`Agent ${event.name} is back online`);
+          }
+        });
+        
+        client.current.on('policy.deployed', (event) => {
+          toast.info(`Policy "${event.policyName}" deployed to ${event.agentCount} agents`);
+        });
+        
+        client.current.on('compliance.failed', (event) => {
+          toast.error(`${event.framework} compliance check failed`);
+        });
+        
+        // Connection state handlers
+        client.current.on('connection:lost', () => {
+          setState(prev => ({ ...prev, connected: false }));
+          toast.warning('Real-time connection lost. Attempting to reconnect...');
+        });
+        
+        client.current.on('connection:restored', () => {
+          setState(prev => ({ ...prev, connected: true }));
+          toast.success('Real-time connection restored');
+        });
+        
+      } catch (error) {
+        console.error('Failed to initialize real-time updates:', error);
+        setState(prev => ({ ...prev, loading: false }));
+        toast.error('Failed to establish real-time connection');
+      }
+    };
     
-    client.current.on('alert', (alert) => {
-      setAlerts(prev => [alert, ...prev]);
-    });
-    
-    client.current.on('alert:critical', (alert) => {
-      // Handle critical alerts immediately
-      notifySecurityTeam(alert);
-    });
+    initializeRealtime();
     
     return () => {
       client.current.unsubscribe();
     };
   }, []);
   
+  const handleCriticalAlert = async (alert: SecurityAlert) => {
+    // Implement critical alert handling
+    try {
+      // Auto-escalate to security team
+      await fetch('/api/escalate-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          alertId: alert.id,
+          severity: alert.severity,
+          escalationLevel: 'immediate'
+        })
+      });
+      
+      // Log to security system
+      console.error('CRITICAL SECURITY ALERT:', alert);
+      
+      // Trigger automated response if configured
+      if (alert.category === 'policy_violation') {
+        await client.current.policies.triggerEmergencyLockdown(alert.agentId);
+      }
+      
+    } catch (error) {
+      console.error('Failed to handle critical alert:', error);
+    }
+  };
+  
+  const playAlertSound = (severity: string) => {
+    const audio = new Audio(`/sounds/${severity}-alert.mp3`);
+    audio.play().catch(e => console.warn('Could not play alert sound:', e));
+  };
+  
+  const dismissAlert = async (alertId: string) => {
+    try {
+      await client.current.monitoring.dismissAlert(alertId);
+      setState(prev => ({
+        ...prev,
+        alerts: prev.alerts.filter(alert => alert.id !== alertId)
+      }));
+    } catch (error) {
+      toast.error('Failed to dismiss alert');
+    }
+  };
+  
+  const acknowledgeAlert = async (alertId: string) => {
+    try {
+      await client.current.monitoring.acknowledgeAlert(alertId);
+      setState(prev => ({
+        ...prev,
+        alerts: prev.alerts.map(alert => 
+          alert.id === alertId 
+            ? { ...alert, acknowledged: true, acknowledgedAt: new Date() }
+            : alert
+        )
+      }));
+    } catch (error) {
+      toast.error('Failed to acknowledge alert');
+    }
+  };
+  
+  if (state.loading) {
+    return <div className="loading-spinner">Loading alerts...</div>;
+  }
+  
   return (
-    <div>
-      <h3>Security Alerts</h3>
-      {alerts.map(alert => (
-        <div key={alert.id} className={`alert ${alert.severity}`}>
-          <strong>{alert.title}</strong>
-          <p>{alert.description}</p>
+    <div className="alerts-container">
+      <div className="alerts-header">
+        <h3>Security Alerts</h3>
+        <div className={`connection-status ${state.connected ? 'connected' : 'disconnected'}`}>
+          {state.connected ? '🟢 Connected' : '🔴 Disconnected'}
         </div>
-      ))}
+      </div>
+      
+      {state.alerts.length === 0 ? (
+        <div className="no-alerts">
+          <p>✅ No active alerts</p>
+        </div>
+      ) : (
+        <div className="alerts-list">
+          {state.alerts.map(alert => (
+            <div key={alert.id} className={`alert alert-${alert.severity}`}>
+              <div className="alert-header">
+                <strong className="alert-title">{alert.title}</strong>
+                <span className="alert-time">
+                  {new Date(alert.createdAt).toLocaleTimeString()}
+                </span>
+              </div>
+              
+              <p className="alert-description">{alert.description}</p>
+              
+              {alert.agentId && (
+                <div className="alert-context">
+                  <span>Agent: {alert.agentName || alert.agentId}</span>
+                </div>
+              )}
+              
+              <div className="alert-actions">
+                {!alert.acknowledged && (
+                  <button 
+                    className="btn btn-secondary"
+                    onClick={() => acknowledgeAlert(alert.id)}
+                  >
+                    Acknowledge
+                  </button>
+                )}
+                
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => dismissAlert(alert.id)}
+                >
+                  Dismiss
+                </button>
+                
+                {alert.severity === 'critical' && (
+                  <button 
+                    className="btn btn-danger"
+                    onClick={() => handleCriticalAlert(alert)}
+                  >
+                    Emergency Response
+                  </button>
+                )}
+              </div>
+              
+              {alert.acknowledged && (
+                <div className="alert-acknowledged">
+                  ✓ Acknowledged at {new Date(alert.acknowledgedAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+
+export default RealTimeAlerts;
 ```
 
 ## 🔧 Node.js Automation
