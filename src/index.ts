@@ -34,15 +34,15 @@ export * from './errors';
 export type {
   Agent,
   Policy,
-  PolicyTemplate,
-  HealthScore,
-  SecurityAlert,
-  UsageMetrics,
-  DiagnosticResult,
-  ComplianceFramework,
-  PolicyMode,
-  AgentStatus,
-  AlertSeverity,
+  AgentConfig,
+  AgentMetrics,
+  PolicyScope,
+  FallbackConfig,
+  RolloutConfig,
+  TelemetryData,
+  ComplianceReport,
+  DiagnosticsResult,
+  VeliKeyConfig,
 } from './types';
 
 // Convenience factory functions
