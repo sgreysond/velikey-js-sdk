@@ -6,9 +6,9 @@
  * Generate a UUID v4
  */
 export function generateUUID(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    // @ts-ignore - crypto.randomUUID is available in Node.js 16+
-    return crypto.randomUUID();
+  if (typeof globalThis !== 'undefined' && (globalThis as any).crypto && 'randomUUID' in (globalThis as any).crypto) {
+    // @ts-expect-error Node 16+ provides crypto.randomUUID
+    return (globalThis as any).crypto.randomUUID();
   }
   
   // Fallback for older environments
@@ -78,7 +78,7 @@ export function deepMerge<T extends Record<string, any>>(target: T, source: Part
   const result = { ...target };
   
   for (const key in source) {
-    if (source.hasOwnProperty(key)) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
       const sourceValue = source[key];
       const targetValue = result[key];
       

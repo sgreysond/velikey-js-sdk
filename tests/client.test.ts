@@ -10,6 +10,10 @@ jest.mock('axios');
 import axios from 'axios';
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+
 describe('VeliKeySDK', () => {
   let client: VeliKeySDK;
   let mockAxiosInstance: jest.Mocked<any>;
@@ -36,6 +40,15 @@ describe('VeliKeySDK', () => {
   });
 
   afterEach(() => {
+    try {
+      if (client) {
+        (client as any).unsubscribe?.();
+        client.destroy();
+      }
+    } catch {}
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+    jest.clearAllTimers();
     jest.clearAllMocks();
   });
 
@@ -239,14 +252,9 @@ describe('React Hooks', () => {
 });
 
 // Integration tests
-describe('Integration Tests', () => {
-  beforeEach(() => {
-    // Skip integration tests unless explicitly enabled
-    if (!process.env.RUN_INTEGRATION_TESTS) {
-      jest.skip();
-    }
-  });
-
+const RUN_IT = !!process.env.RUN_INTEGRATION_TESTS;
+const integrationDescribe = RUN_IT ? describe : describe.skip;
+integrationDescribe('Integration Tests', () => {
   it('should connect to test API server', async () => {
     const client = new VeliKeySDK({
       apiKey: process.env.TEST_API_KEY || 'test-key',

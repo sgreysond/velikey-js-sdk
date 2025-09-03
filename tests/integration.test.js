@@ -2,7 +2,7 @@ const { Client } = require("../src/client");
 
 describe("VeliKey JS SDK", () => {
   test("client initialization", () => {
-    const client = new Client({ apiKey: "test" });
+    const client = new Client({ apiKey: "test", baseUrl: "https://api-test.velikey.com" });
     expect(client).toBeDefined();
   });
 
