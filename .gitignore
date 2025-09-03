@@ -1,3 +1,9 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+npm-debug.log*
+yarn-error.log*
 # Dependencies
 node_modules/
 npm-debug.log*
