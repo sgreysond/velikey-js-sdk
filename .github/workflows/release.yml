@@ -1,0 +1,41 @@
+name: Release (npm)
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to npm (requires NPM_TOKEN)"
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm test --silent
+      - run: npm run build --if-present
+      - name: Publish (guarded)
+        if: ${{ inputs.publish == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then echo "NPM_TOKEN missing, aborting"; exit 1; fi
+          npm publish --access public
+      - name: Dry-run artifact
+        if: ${{ inputs.publish != 'true' }}
+        run: |
+          mkdir -p dist-artifacts && cp -r dist/* dist-artifacts/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.publish != 'true' }}
+        with:
+          name: npm-dist
+          path: dist-artifacts/**
+
