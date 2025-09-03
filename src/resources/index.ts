@@ -9,3 +9,4 @@ export { ComplianceResource } from './compliance';
 export { DiagnosticsResource } from './diagnostics';
 export { RolloutsResource } from './rollouts';
 export { TelemetryResource } from './telemetry';
+export { NotifierClient } from './notifier';

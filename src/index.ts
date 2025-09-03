@@ -27,6 +27,7 @@
 export { VeliKeySDK } from './client';
 export * from './types';
 export * from './resources';
+export { NotifierClient } from './resources/notifier';
 export * from './utils';
 export * from './errors';
 
