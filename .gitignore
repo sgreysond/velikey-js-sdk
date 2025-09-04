@@ -128,3 +128,9 @@ Thumbs.db
 *.pem
 config.json
 .env.production
+
+# Compiled TypeScript files in src
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+src/**/*.d.ts.map
