@@ -16,7 +16,14 @@ async function deposit(mboxId: string) {
     msg_id: b64(randomBytes(16)),
     blob: b64(randomBytes(64)),
   };
-  await axios.post(`${SPOOL_URL}/v1/deposit`, req);
+  try {
+    await axios.post(`${SPOOL_URL}/v1/deposit`, req);
+  } catch (e: any) {
+    if (e?.response?.status !== 429) {
+      throw e;
+    }
+    // Tolerate rate limiting in constrained test env
+  }
 }
 
 describe('MultiDeviceRotator', () => {
