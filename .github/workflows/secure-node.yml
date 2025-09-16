@@ -1,0 +1,26 @@
+name: Security - Node Install Guard (JS SDK)
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Install dependencies (ignore scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Block dangerous lifecycle scripts
+        run: |
+          node -e "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));const s=pkg.scripts||{};const bad=['preinstall','install','postinstall','prepare'].filter(k=>s[k]);if(bad.length){console.error('Blocked lifecycle scripts:',bad);process.exit(1)};console.log('No dangerous lifecycle scripts found.')"
+
+      - name: Audit (non-failing, report only)
+        run: npm audit --omit=dev || true
