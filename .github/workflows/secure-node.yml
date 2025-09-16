@@ -1,4 +1,4 @@
-name: Security - Node Install Guard (JS SDK)
+name: Security - Node Install Guard
 
 on:
   push:
@@ -12,15 +12,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 'package-lock.json'
 
-      - name: Install dependencies (ignore scripts)
-        run: npm ci --ignore-scripts
-
-      - name: Block dangerous lifecycle scripts
+      - name: Scan Node projects (ignore scripts, block lifecycle hooks)
+        shell: bash
         run: |
-          node -e "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));const s=pkg.scripts||{};const bad=['preinstall','install','postinstall','prepare'].filter(k=>s[k]);if(bad.length){console.error('Blocked lifecycle scripts:',bad);process.exit(1)};console.log('No dangerous lifecycle scripts found.')"
-
-      - name: Audit (non-failing, report only)
-        run: npm audit --omit=dev || true
+          set -euo pipefail
+          mapfile -d '' PKGS < <(find . -path './**/node_modules' -prune -o -name package.json -print0)
+          if [ ${#PKGS[@]} -eq 0 ]; then echo "No package.json found"; exit 0; fi
+          for pkg in "${PKGS[@]}"; do
+            dir=$(dirname "$pkg")
+            echo "::group::Scanning $dir"
+            cd "$dir"
+            if [ -f package-lock.json ]; then
+              npm ci --ignore-scripts || true
+            else
+              npm i --ignore-scripts --package-lock-only || true
+              npm ci --ignore-scripts || true
+            fi
+            node -e 'const fs=require("fs");const pkg=JSON.parse(fs.readFileSync("package.json","utf8"));const s=pkg.scripts||{};const bad=["preinstall","install","postinstall","prepare"].filter(k=>s[k]); if(bad.length){console.error("Blocked lifecycle scripts in", process.cwd(), ":", bad.join(",")); process.exit(1)}; const vals=Object.values(s).join(" || "); if(/(curl\\s|wget\\s|https?:\\/\\/)/i.test(vals)){console.error("Blocked network calls in npm scripts in", process.cwd()); process.exit(1)}; console.log("No dangerous lifecycle or network calls in npm scripts.")' || exit 1
+            npm audit --omit=dev || true
+            cd - >/dev/null
+            echo "::endgroup::"
+          done
