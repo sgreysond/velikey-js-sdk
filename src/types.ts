@@ -1,244 +1,200 @@
-/**
- * TypeScript type definitions for VeliKey JavaScript SDK
- */
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface VeliKeyConfig {
-  apiKey: string;
+  apiKey?: string;
+  bearerToken?: string;
+  sessionCookie?: string;
+  sessionToken?: string;
+  useSecureSessionCookie?: boolean;
   baseUrl?: string;
   timeout?: number;
-  retries?: number;
+  maxRetries?: number;
+  retryMinDelayMs?: number;
+  retryMaxDelayMs?: number;
+}
+
+export interface CallOptions {
+  params?: Record<string, string | number | boolean | undefined | null>;
+  headers?: Record<string, string>;
+  timeout?: number;
+  idempotencyKey?: string;
+  retryable?: boolean;
 }
 
 export interface Agent {
   id: string;
-  name: string;
-  status: 'online' | 'offline' | 'degraded';
-  version: string;
-  lastHeartbeat: string;
-  config: AgentConfig;
-  metrics: AgentMetrics;
-  tags: Record<string, string>;
-}
-
-export interface AgentConfig {
-  controlPlaneUrl: string;
-  authToken: string;
-  enableTelemetry: boolean;
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
-  plugins: PluginConfig[];
-}
-
-export interface PluginConfig {
-  name: string;
-  version: string;
-  enabled: boolean;
-  config: Record<string, any>;
-}
-
-export interface AgentMetrics {
-  cpu: number;
-  memory: number;
-  connections: number;
-  throughput: number;
-  latency: number;
-  errorRate: number;
+  tenantId?: string;
+  agentId?: string;
+  name?: string;
+  status?: string;
+  version?: string;
+  capabilities?: string[];
+  lastHeartbeat?: string;
+  enrolledAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Policy {
   id: string;
   name: string;
-  description: string;
-  scope: PolicyScope;
-  preferences: string[];
-  fallback: FallbackConfig;
-  rollout: RolloutConfig;
-  modes?: ModesConfig;
-  thresholds?: ThresholdsConfig;
-  status: 'active' | 'inactive' | 'draft';
-  createdAt: string;
-  updatedAt: string;
+  description?: string;
+  scope?: string;
+  scopeValue?: string;
+  policyType?: string;
+  rules?: Record<string, unknown>;
+  priority?: number;
+  isActive?: boolean;
+  analysis?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-export interface PolicyScope {
-  tenant?: string;
-  region?: string;
-  service?: string;
-  partner?: string;
-}
-
-export interface FallbackConfig {
-  allowed: boolean;
-  denyIfNoPQ?: boolean;
-  maxSteps?: number;
-}
-
-export interface RolloutConfig {
-  canaryPercent: number;
-  stabilizationWindowS?: number;
-}
-
-export interface ModesConfig {
-  aegis?: 'observe' | 'hybrid_preferred' | 'hybrid_required';
-  somnus?: 'observe' | 'rewrap_only' | 'enforce_soft' | 'enforce_strict';
-  alpe?: 'observe' | 'enforce_soft' | 'enforce_strict' | 'rewrap_only';
-}
-
-export interface ThresholdsConfig {
-  errorRateMax?: number;
-  latencyP95IncreaseMs?: number;
-  compatibilityMin?: number;
-}
-
-export interface RolloutPlan {
-  id: string;
-  policyId: string;
-  phases: RolloutPhase[];
-  estimatedDurationS: number;
-  riskAssessment: string;
-  createdAt: string;
-}
-
-export interface RolloutPhase {
-  phase: string;
-  percentage: number;
-  durationS: number;
-  successCriteria: string[];
-}
-
-export interface RolloutResult {
-  id: string;
-  planId: string;
-  rollbackToken: string;
-  status: 'in_progress' | 'completed' | 'failed' | 'rolled_back';
-  explain: string;
-}
-
-export interface TelemetryData {
+export interface AgentPoliciesResponse {
   agentId: string;
-  timestamp: string;
-  metrics: {
-    throughput: number;
-    latency: number;
-    errorRate: number;
-    quantumConnections: number;
-    classicalConnections: number;
+  policies: Policy[];
+  fetchedAt?: string;
+}
+
+export interface Alert {
+  id: string;
+  severity: string;
+  category: string;
+  title: string;
+  description: string;
+  resolved: boolean;
+  source?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  resolvedAt?: string | null;
+}
+
+export interface AlertsStatsResponse {
+  generatedAt: string;
+  totals: {
+    last24h: number;
+    last7d: number;
   };
+  bySeverity: Array<{ severity: string; count: number }>;
+  byCategory: Array<{ category: string; count: number }>;
 }
 
-export interface ComplianceReport {
-  framework: string;
-  status: 'compliant' | 'non_compliant' | 'partial';
-  score: number;
-  findings: ComplianceFinding[];
-  recommendations: string[];
-}
-
-export interface ComplianceFinding {
-  requirement: string;
-  status: 'pass' | 'fail' | 'warning';
-  description: string;
-  evidence?: string;
-}
-
-export interface DiagnosticsResult {
-  agentId: string;
-  timestamp: string;
-  checks: DiagnosticCheck[];
-  overall: 'healthy' | 'warning' | 'critical';
-}
-
-export interface DiagnosticCheck {
-  name: string;
-  status: 'pass' | 'fail' | 'warning';
-  message: string;
-  details?: Record<string, any>;
-}
-
-export interface BillingUsage {
-  tenant: string;
+export interface UsagePoint {
   period: string;
+  dayOfPeriod: number;
+  daysInPeriod: number;
+  encryptionGB: number;
+  telemetryGB: number;
+  environments: number;
+  agents: number;
+  estimatedCost: number;
+}
+
+export interface UsageResponse {
+  current: UsagePoint;
+  usage: UsagePoint;
+  historical: UsagePoint[];
+}
+
+export interface UsageSummaryResponse {
+  period: {
+    start: string;
+    end: string;
+    daysElapsed: number;
+  };
   usage: {
-    connections: number;
-    dataTransferred: number;
-    policies: number;
+    encryptionDataGB: number;
+    telemetryDataGB: number;
+    telemetryDays: number;
+    environments: number;
     agents: number;
   };
-  costs: {
-    total: number;
-    breakdown: Record<string, number>;
+  rates: {
+    encryptionDailyGB: number;
+    telemetryDailyGB: number;
   };
+  pricing: {
+    basePlatformFee: number;
+    tier1PerGB: number;
+    tier2PerGB: number;
+    tier3PerGB: number;
+    tier4PerGB: number;
+    telemetryPerGB: number;
+    environmentFee: number;
+  };
+  costs: {
+    platformFeeUsd: number;
+    encryptionUsd: number;
+    telemetryUsd: number;
+    environmentsUsd: number;
+    totalUsd: number;
+  };
+  current?: UsagePoint;
+  summary?: UsagePoint;
 }
 
-// Request/Response types
-export interface CreatePolicyRequest {
-  name: string;
-  description?: string;
-  scope: PolicyScope;
-  preferences: string[];
-  fallback: FallbackConfig;
-  rollout: RolloutConfig;
-  modes?: ModesConfig;
-  thresholds?: ThresholdsConfig;
+export interface RolloutMaintenanceWindow {
+  start: string;
+  end: string;
 }
 
 export interface PlanRolloutRequest {
   policyId: string;
   canaryPercent?: number;
   stabilizationWindowS?: number;
+  maintenanceWindows?: RolloutMaintenanceWindow[];
+  explain?: boolean;
 }
 
 export interface ApplyRolloutRequest {
   planId: string;
+  dryRun?: boolean;
   idempotencyKey?: string;
+  confirm?: boolean;
+  confirmation?: string;
+  maintenanceWindows?: RolloutMaintenanceWindow[];
 }
 
 export interface TriggerRollbackRequest {
   rollbackToken: string;
+  confirm?: boolean;
+  confirmation?: string;
 }
 
-// API Response wrapper
-export interface APIResponse<T = any> {
+export interface RolloutOperationData {
+  plan_id?: string;
+  rollout_id?: string;
+  rollback_id?: string;
+  rollback_token?: string;
+}
+
+export interface RolloutOperationResponse {
+  success?: boolean;
+  error?: string;
+  message?: string;
+  data?: RolloutOperationData;
+  rolloutReceipt?: { id: string };
+}
+
+export interface TelemetryIngestRequest {
+  event: string;
+  properties?: Record<string, string | number | boolean | null | Array<string | number | boolean | null>>;
+  timestamp?: string;
+}
+
+export interface TelemetryIngestResponse {
   success: boolean;
-  data?: T;
-  error?: APIError;
-  explain?: ExplainResult;
-  rollbackToken?: string;
-  idempotencyReplayed?: boolean;
+  accepted: boolean;
+  queued: boolean;
+  timestamp: string;
 }
 
 export interface APIError {
-  code: string;
-  human: string;
+  code?: string;
+  error?: string;
+  message?: string;
+  human?: string;
   hint?: string;
   nextCall?: string;
-  docsAnchor?: string;
-}
-
-export interface ExplainResult {
-  decision: string;
-  why: string[];
-  nextActions: NextAction[];
-  diff?: DiffResult;
-}
-
-export interface NextAction {
-  tool: string;
-  args: Record<string, any>;
-  description: string;
-}
-
-export interface DiffResult {
-  before?: any;
-  after?: any;
-  added: Record<string, any>;
-  removed: Record<string, any>;
-  modified: Record<string, any>;
-}
-
-// Options for API calls
-export interface CallOptions {
-  dryRun?: boolean;
-  explain?: boolean;
-  timeout?: number;
-  idempotencyKey?: string;
+  next_call?: string;
 }

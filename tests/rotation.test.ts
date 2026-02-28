@@ -3,6 +3,8 @@ import { MultiDeviceRotator } from '../src/rotation';
 import { randomBytes } from 'crypto';
 
 const SPOOL_URL = process.env.SPOOL_URL || 'http://localhost:18080';
+const RUN_ROTATION_TESTS = process.env.RUN_ROTATION_TESTS === '1';
+const maybeDescribe = RUN_ROTATION_TESTS ? describe : describe.skip;
 
 const b64 = (buf: Buffer) => buf.toString('base64');
 
@@ -26,7 +28,7 @@ async function deposit(mboxId: string) {
   }
 }
 
-describe('MultiDeviceRotator', () => {
+maybeDescribe('MultiDeviceRotator', () => {
   it('rotates once and reports conflicts thereafter', async () => {
     const mboxId = b64(randomBytes(32));
     await deposit(mboxId);
@@ -39,5 +41,4 @@ describe('MultiDeviceRotator', () => {
     expect(res2.status).toBe('conflict');
   });
 });
-
 

@@ -1,37 +1,55 @@
-import { RolloutPlan, RolloutResult, PlanRolloutRequest, ApplyRolloutRequest, TriggerRollbackRequest, CallOptions } from '../types';
+import {
+  ApplyRolloutRequest,
+  CallOptions,
+  PlanRolloutRequest,
+  RolloutOperationResponse,
+  TriggerRollbackRequest,
+} from '../types';
+
+type RequestClient = {
+  request<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, data?: unknown, options?: CallOptions): Promise<T>;
+};
 
 export class RolloutsResource {
-  constructor(private client: any) {}
+  constructor(private client: RequestClient) {}
 
-  async plan(request: PlanRolloutRequest, options?: CallOptions): Promise<RolloutPlan> {
-    const response = await this.client.request('POST', '/ai/rollouts/plan', request, {
+  async plan(request: PlanRolloutRequest, options?: CallOptions): Promise<RolloutOperationResponse> {
+    if (!request?.policyId?.trim()) {
+      throw new Error('policyId is required');
+    }
+    return this.client.request<RolloutOperationResponse>('POST', '/api/rollouts/plan', request, options);
+  }
+
+  async apply(request: ApplyRolloutRequest, options?: CallOptions): Promise<RolloutOperationResponse> {
+    if (!request?.planId?.trim()) {
+      throw new Error('planId is required');
+    }
+
+    const payload: ApplyRolloutRequest = {
+      ...request,
+      dryRun: request.dryRun !== false,
+    };
+    if (payload.dryRun === false) {
+      payload.confirm = true;
+      payload.confirmation = 'APPLY';
+    }
+
+    return this.client.request<RolloutOperationResponse>('POST', '/api/rollouts/apply', payload, {
       ...options,
-      dryRun: true // Always dry run for planning
+      idempotencyKey: request.idempotencyKey || options?.idempotencyKey,
     });
-    return response.data;
   }
 
-  async apply(request: ApplyRolloutRequest, options?: CallOptions): Promise<RolloutResult> {
-    const response = await this.client.request('POST', '/ai/rollouts/apply', request, options);
-    return response.data;
-  }
+  async rollback(request: TriggerRollbackRequest, options?: CallOptions): Promise<RolloutOperationResponse> {
+    if (!request?.rollbackToken?.trim()) {
+      throw new Error('rollbackToken is required');
+    }
 
-  async rollback(request: TriggerRollbackRequest, options?: CallOptions): Promise<{ status: string }> {
-    const response = await this.client.request('POST', '/ai/rollouts/rollback', request, options);
-    return response.data;
-  }
-
-  async list(options?: { status?: string; policyId?: string } & CallOptions): Promise<RolloutResult[]> {
-    const params = new URLSearchParams();
-    if (options?.status) params.set('status', options.status);
-    if (options?.policyId) params.set('policy_id', options.policyId);
-
-    const response = await this.client.request('GET', `/rollouts?${params}`, undefined, options);
-    return response.data?.rollouts || [];
-  }
-
-  async get(rolloutId: string, options?: CallOptions): Promise<RolloutResult> {
-    const response = await this.client.request('GET', `/rollouts/${rolloutId}`, undefined, options);
-    return response.data;
+    const payload: TriggerRollbackRequest = {
+      ...request,
+      confirm: true,
+      confirmation: 'ROLLBACK',
+    };
+    return this.client.request<RolloutOperationResponse>('POST', '/api/rollouts/rollback', payload, options);
   }
 }

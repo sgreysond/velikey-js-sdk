@@ -115,15 +115,27 @@ export class TransientError extends VeliKeyError {
   }
 }
 
+export class UnsupportedOperationError extends VeliKeyError {
+  constructor(method: string, routeHint?: string) {
+    super(
+      `${method} is not available in the current public Axis API surface`,
+      'UNSUPPORTED_OPERATION',
+      501,
+      routeHint ? `Use ${routeHint} instead` : undefined
+    );
+    this.name = 'UnsupportedOperationError';
+  }
+}
+
 /**
  * Factory function to create appropriate error from API response
  */
 export function createErrorFromResponse(response: any, statusCode?: number): VeliKeyError {
-  const error = response.error || response;
+  const error = (response && typeof response === 'object') ? (response.error || response) : { message: String(response ?? '') };
   const code = error.code || 'UNKNOWN';
-  const message = error.human || error.message || 'Unknown error occurred';
+  const message = error.human || error.error || error.message || 'Unknown error occurred';
   const hint = error.hint;
-  const nextCall = error.next_call;
+  const nextCall = error.next_call || error.nextCall;
 
   switch (code) {
     case 'UNAUTHORIZED':
@@ -146,6 +158,8 @@ export function createErrorFromResponse(response: any, statusCode?: number): Vel
       return new IdempotencyReplayError(message);
     case 'TRANSIENT':
       return new TransientError(message, hint);
+    case 'UNSUPPORTED_OPERATION':
+      return new UnsupportedOperationError(message, nextCall);
     default:
       return new VeliKeyError(message, code, statusCode, hint, nextCall);
   }

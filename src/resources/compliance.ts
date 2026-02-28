@@ -1,24 +1,15 @@
-import { ComplianceReport, CallOptions } from '../types';
+import { UnsupportedOperationError } from '../errors';
 
 export class ComplianceResource {
-  constructor(private client: any) {}
-
-  async getReport(framework: string, options?: CallOptions): Promise<ComplianceReport> {
-    const response = await this.client.request('GET', `/compliance/reports/${framework}`, undefined, options);
-    return response.data;
+  async getReport(): Promise<never> {
+    throw new UnsupportedOperationError('compliance.getReport', 'unsupported in public Axis API');
   }
 
-  async listFrameworks(options?: CallOptions): Promise<string[]> {
-    const response = await this.client.request('GET', '/compliance/frameworks', undefined, options);
-    return response.data?.frameworks || [];
+  async listFrameworks(): Promise<never> {
+    throw new UnsupportedOperationError('compliance.listFrameworks', 'unsupported in public Axis API');
   }
 
-  async runAssessment(
-    framework: string, 
-    scope?: { tenant?: string; region?: string }, 
-    options?: CallOptions
-  ): Promise<ComplianceReport> {
-    const response = await this.client.request('POST', `/compliance/assess/${framework}`, scope, options);
-    return response.data;
+  async runAssessment(): Promise<never> {
+    throw new UnsupportedOperationError('compliance.runAssessment', 'unsupported in public Axis API');
   }
 }

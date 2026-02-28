@@ -1,38 +1,40 @@
-import { TelemetryData, CallOptions } from '../types';
+import { Alert, AlertsStatsResponse, CallOptions } from '../types';
+import { UnsupportedOperationError } from '../errors';
+
+type RequestClient = {
+  request<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, data?: unknown, options?: CallOptions): Promise<T>;
+};
 
 export class MonitoringResource {
-  constructor(private client: any) {}
+  constructor(private client: RequestClient) {}
 
-  async getDashboardStats(options?: CallOptions): Promise<{
-    totalAgents: number;
-    activePolicies: number;
-    totalConnections: number;
-    postQuantumConnections: number;
-  }> {
-    const response = await this.client.request('GET', '/monitoring/dashboard', undefined, options);
-    return response.data;
+  async getActiveAlerts(options?: { severity?: string; category?: string; limit?: number } & CallOptions): Promise<Alert[]> {
+    const response = await this.client.request<{ alerts?: Alert[] }>('GET', '/api/alerts', undefined, {
+      ...options,
+      params: {
+        ...(options?.params || {}),
+        resolved: false,
+        ...(options?.severity ? { severity: options.severity } : {}),
+        ...(options?.category ? { category: options.category } : {}),
+        ...(options?.limit ? { limit: options.limit } : {}),
+      },
+    });
+    return Array.isArray(response?.alerts) ? response.alerts : [];
   }
 
-  async getMetrics(options?: { 
-    timeRange?: string; 
-    agentId?: string; 
-    tenant?: string 
-  } & CallOptions): Promise<TelemetryData[]> {
-    const params = new URLSearchParams();
-    if (options?.timeRange) params.set('time_range', options.timeRange);
-    if (options?.agentId) params.set('agent_id', options.agentId);
-    if (options?.tenant) params.set('tenant', options.tenant);
-
-    const response = await this.client.request('GET', `/telemetry/metrics?${params}`, undefined, options);
-    return response.data?.metrics || [];
+  async getAlertStats(options?: CallOptions): Promise<AlertsStatsResponse> {
+    return this.client.request<AlertsStatsResponse>('GET', '/api/alerts/stats', undefined, options);
   }
 
-  async getAgentHealth(agentId?: string, options?: CallOptions): Promise<{
-    status: 'healthy' | 'warning' | 'critical';
-    checks: Record<string, boolean>;
-  }> {
-    const path = agentId ? `/monitoring/health/${agentId}` : '/monitoring/health';
-    const response = await this.client.request('GET', path, undefined, options);
-    return response.data;
+  async getDashboardStats(): Promise<never> {
+    throw new UnsupportedOperationError('monitoring.getDashboardStats', 'GET /api/alerts/stats');
+  }
+
+  async getMetrics(): Promise<never> {
+    throw new UnsupportedOperationError('monitoring.getMetrics', 'GET /api/usage');
+  }
+
+  async getAgentHealth(): Promise<never> {
+    throw new UnsupportedOperationError('monitoring.getAgentHealth', 'GET /api/health');
   }
 }

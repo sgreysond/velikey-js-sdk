@@ -3,8 +3,10 @@ import axios from 'axios';
 
 const NOTIFIER_URL = process.env.NOTIFIER_URL || 'http://localhost:18082';
 const SPOOL_URL = process.env.SPOOL_URL || 'http://localhost:18080';
+const RUN_NOTIFIER_TESTS = process.env.RUN_NOTIFIER_TESTS === '1';
+const maybeDescribe = RUN_NOTIFIER_TESTS ? describe : describe.skip;
 
-describe('NotifierClient', () => {
+maybeDescribe('NotifierClient', () => {
   it('registers, issues, and attaches notify descriptor', async () => {
     const wa = Math.random().toString(16).slice(2);
     const client = new NotifierClient(NOTIFIER_URL, { spoolUrl: SPOOL_URL });
@@ -50,5 +52,4 @@ describe('NotifierClient', () => {
     }
   });
 });
-
 

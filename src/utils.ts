@@ -7,7 +7,6 @@
  */
 export function generateUUID(): string {
   if (typeof globalThis !== 'undefined' && (globalThis as any).crypto && 'randomUUID' in (globalThis as any).crypto) {
-    // @ts-expect-error Node 16+ provides crypto.randomUUID
     return (globalThis as any).crypto.randomUUID();
   }
   
@@ -75,7 +74,7 @@ export function validateRequired<T extends Record<string, any>>(
  * Deep merge two objects
  */
 export function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>): T {
-  const result = { ...target };
+  const result: Record<string, any> = { ...target };
   
   for (const key in source) {
     if (Object.prototype.hasOwnProperty.call(source, key)) {
@@ -83,14 +82,14 @@ export function deepMerge<T extends Record<string, any>>(target: T, source: Part
       const targetValue = result[key];
       
       if (isObject(sourceValue) && isObject(targetValue)) {
-        result[key] = deepMerge(targetValue, sourceValue);
+        result[key] = deepMerge(targetValue as Record<string, any>, sourceValue as Record<string, any>);
       } else {
         result[key] = sourceValue as any;
       }
     }
   }
   
-  return result;
+  return result as T;
 }
 
 /**

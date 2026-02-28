@@ -1,62 +1,40 @@
-import { TelemetryData, CallOptions } from '../types';
+import {
+  CallOptions,
+  TelemetryIngestRequest,
+  TelemetryIngestResponse,
+  UsageResponse,
+  UsageSummaryResponse,
+} from '../types';
+
+type RequestClient = {
+  request<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, data?: unknown, options?: CallOptions): Promise<T>;
+};
 
 export class TelemetryResource {
-  constructor(private client: any) {}
+  constructor(private client: RequestClient) {}
 
-  async submit(data: TelemetryData, options?: CallOptions): Promise<{ status: string }> {
-    const response = await this.client.request('POST', '/telemetry', data, options);
-    return response.data;
+  async ingest(data: TelemetryIngestRequest, options?: CallOptions): Promise<TelemetryIngestResponse> {
+    if (!data?.event?.trim()) {
+      throw new Error('event is required');
+    }
+    return this.client.request<TelemetryIngestResponse>('POST', '/api/telemetry/ingest', data, options);
   }
 
-  async stream(
-    agentId?: string,
-    callback?: (data: TelemetryData) => void
-  ): Promise<() => void> {
-    // In a real implementation, this would establish a WebSocket connection
-    // For now, we'll simulate with polling
-    
-    const params = new URLSearchParams();
-    if (agentId) params.set('agent_id', agentId);
-    
-    let isStreaming = true;
-    
-    const poll = async () => {
-      while (isStreaming) {
-        try {
-          const response = await this.client.request('GET', `/telemetry/stream?${params}`);
-          if (callback && response.data) {
-            callback(response.data);
-          }
-        } catch (error) {
-          console.warn('Telemetry stream error:', error);
-        }
-        
-        // Wait 5 seconds before next poll
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      }
-    };
-    
-    poll(); // Start polling
-    
-    // Return cleanup function
-    return () => {
-      isStreaming = false;
-    };
+  async submit(data: TelemetryIngestRequest, options?: CallOptions): Promise<TelemetryIngestResponse> {
+    return this.ingest(data, options);
   }
 
-  async getMetrics(
-    options?: { 
-      timeRange?: string; 
-      agentId?: string; 
-      metrics?: string[] 
-    } & CallOptions
-  ): Promise<TelemetryData[]> {
-    const params = new URLSearchParams();
-    if (options?.timeRange) params.set('time_range', options.timeRange);
-    if (options?.agentId) params.set('agent_id', options.agentId);
-    if (options?.metrics) params.set('metrics', options.metrics.join(','));
+  async getUsage(period: 'current' | '3months' | '6months' | 'year' = 'current', options?: CallOptions): Promise<UsageResponse> {
+    return this.client.request<UsageResponse>('GET', '/api/usage', undefined, {
+      ...options,
+      params: {
+        ...(options?.params || {}),
+        period,
+      },
+    });
+  }
 
-    const response = await this.client.request('GET', `/telemetry/metrics?${params}`, undefined, options);
-    return response.data?.metrics || [];
+  async getUsageSummary(options?: CallOptions): Promise<UsageSummaryResponse> {
+    return this.client.request<UsageSummaryResponse>('GET', '/api/usage/summary', undefined, options);
   }
 }

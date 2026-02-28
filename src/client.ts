@@ -1,13 +1,14 @@
-/**
- * Main VeliKey SDK client
- */
-
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
-import { EventEmitter } from 'eventemitter3';
+import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
+import { EventEmitter } from 'node:events';
 import {
-  VeliKeyConfig,
-  APIResponse,
+  Agent,
+  Alert,
   CallOptions,
+  HttpMethod,
+  Policy,
+  UsageResponse,
+  UsageSummaryResponse,
+  VeliKeyConfig,
 } from './types';
 import { createErrorFromResponse } from './errors';
 import { AgentsResource } from './resources/agents';
@@ -17,12 +18,28 @@ import { ComplianceResource } from './resources/compliance';
 import { DiagnosticsResource } from './resources/diagnostics';
 import { RolloutsResource } from './resources/rollouts';
 import { TelemetryResource } from './resources/telemetry';
-import { generateUUID } from './utils';
+import { generateUUID, sleep } from './utils';
+
+const DEFAULT_BASE_URL = 'https://axis.velikey.com';
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_RETRY_MIN_DELAY_MS = 250;
+const DEFAULT_RETRY_MAX_DELAY_MS = 2_000;
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const SDK_USER_AGENT = 'velikey-js-sdk/0.2.0';
+
+type HeaderRecord = Record<string, string>;
 
 export class VeliKeySDK extends EventEmitter {
   private client: AxiosInstance;
-  
-  // Resource managers
+  private readonly authToken?: string;
+  private readonly sessionCookie?: string;
+  private readonly sessionToken?: string;
+  private readonly useSecureSessionCookie: boolean;
+  private readonly maxRetries: number;
+  private readonly retryMinDelayMs: number;
+  private readonly retryMaxDelayMs: number;
+
   public readonly agents: AgentsResource;
   public readonly policies: PoliciesResource;
   public readonly monitoring: MonitoringResource;
@@ -33,216 +50,240 @@ export class VeliKeySDK extends EventEmitter {
 
   constructor(config: VeliKeyConfig) {
     super();
-    
+
+    const authToken = config.bearerToken || config.apiKey;
+    const hasAuth = Boolean(authToken || config.sessionCookie || config.sessionToken);
+    if (!hasAuth) {
+      throw new Error(
+        'Provide at least one credential: apiKey, bearerToken, sessionCookie, or sessionToken.'
+      );
+    }
+
+    this.authToken = authToken;
+    this.sessionCookie = config.sessionCookie?.trim() || undefined;
+    this.sessionToken = config.sessionToken?.trim() || undefined;
+    this.useSecureSessionCookie = Boolean(config.useSecureSessionCookie);
+    this.maxRetries = Math.max(0, config.maxRetries ?? DEFAULT_MAX_RETRIES);
+    this.retryMinDelayMs = Math.max(1, config.retryMinDelayMs ?? DEFAULT_RETRY_MIN_DELAY_MS);
+    this.retryMaxDelayMs = Math.max(this.retryMinDelayMs, config.retryMaxDelayMs ?? DEFAULT_RETRY_MAX_DELAY_MS);
+
     this.client = axios.create({
-      baseURL: config.baseUrl || 'https://api.velikey.com',
-      timeout: config.timeout || 30000,
+      baseURL: config.baseUrl || DEFAULT_BASE_URL,
+      timeout: config.timeout ?? DEFAULT_TIMEOUT_MS,
       headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'User-Agent': `velikey-js-sdk/0.1.0`,
+        Accept: 'application/json',
         'Content-Type': 'application/json',
+        'User-Agent': SDK_USER_AGENT,
       },
     });
 
-    // Add response interceptor for error handling
-    this.client.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        const veliKeyError = createErrorFromResponse(
-          error.response?.data || error.message,
-          error.response?.status
-        );
-        throw veliKeyError;
-      }
-    );
-
-    // Initialize resource managers
     this.agents = new AgentsResource(this);
     this.policies = new PoliciesResource(this);
     this.monitoring = new MonitoringResource(this);
-    this.compliance = new ComplianceResource(this);
-    this.diagnostics = new DiagnosticsResource(this);
+    this.compliance = new ComplianceResource();
+    this.diagnostics = new DiagnosticsResource();
     this.rollouts = new RolloutsResource(this);
     this.telemetry = new TelemetryResource(this);
   }
 
-  /**
-   * Internal request method used by resource managers
-   */
-  async request(
-    method: string,
+  async request<T = unknown>(
+    method: HttpMethod,
     path: string,
-    data?: any,
+    data?: unknown,
     options?: CallOptions
-  ): Promise<APIResponse> {
-    const config: AxiosRequestConfig = {
-      method: method as any,
+  ): Promise<T> {
+    const methodUpper = method.toUpperCase() as HttpMethod;
+    const headers: HeaderRecord = {
+      ...(options?.headers || {}),
+    };
+    this.applyAuth(headers);
+
+    if (methodUpper !== 'GET' && methodUpper !== 'DELETE') {
+      headers['Idempotency-Key'] = options?.idempotencyKey || generateUUID();
+    }
+
+    const requestConfig: AxiosRequestConfig = {
+      method: methodUpper,
       url: path,
       data,
-      params: {},
-      headers: {},
+      params: options?.params,
+      headers,
+      timeout: options?.timeout,
     };
 
-    // Add query parameters for AI-friendly operations
-    if (options?.dryRun) config.params.dry_run = 'true';
-    if (options?.explain) config.params.explain = 'true';
-
-    // Add idempotency key for mutating operations
-    if (options?.idempotencyKey && method !== 'GET') {
-      config.headers!['Idempotency-Key'] = options.idempotencyKey;
-    } else if (method !== 'GET' && method !== 'DELETE') {
-      config.headers!['Idempotency-Key'] = generateUUID();
-    }
-
-    // Add timeout if specified
-    if (options?.timeout) {
-      config.timeout = options.timeout;
-    }
-
-    const response = await this.client.request(config);
-    return response.data;
+    return this.executeWithRetry<T>(requestConfig, options?.retryable !== false);
   }
 
-  /**
-   * Test connection to the API
-   */
   async testConnection(): Promise<{
     connected: boolean;
-    latency: number;
+    latencyMs: number;
+    status: string;
     version: string;
   }> {
     const start = Date.now();
     try {
-      const response = await this.request('GET', '/healthz');
-      const latency = Date.now() - start;
-      
+      const payload = await this.request<Record<string, unknown>>('GET', '/api/healthz', undefined, {
+        retryable: false,
+      });
       return {
         connected: true,
-        latency,
-        version: response.data?.version || 'unknown'
+        latencyMs: Date.now() - start,
+        status: String(payload.status || 'ok'),
+        version: String(payload.version || 'unknown'),
       };
-    } catch (error) {
+    } catch {
       return {
         connected: false,
-        latency: Date.now() - start,
-        version: 'unknown'
+        latencyMs: Date.now() - start,
+        status: 'unreachable',
+        version: 'unknown',
       };
     }
   }
 
-  /**
-   * Get API information
-   */
-  async getInfo(): Promise<{
-    name: string;
-    version: string;
-    capabilities: string[];
-  }> {
-    const response = await this.request('GET', '/info');
-    return response.data;
+  async getHealth(): Promise<Record<string, unknown>> {
+    try {
+      return await this.request<Record<string, unknown>>('GET', '/api/health', undefined, {
+        retryable: false,
+      });
+    } catch {
+      return this.request<Record<string, unknown>>('GET', '/api/healthz', undefined, {
+        retryable: false,
+      });
+    }
   }
 
-  /**
-   * Close any open connections
-   */
+  async getUsage(period: 'current' | '3months' | '6months' | 'year' = 'current'): Promise<UsageResponse> {
+    return this.request<UsageResponse>('GET', '/api/usage', undefined, {
+      params: { period },
+    });
+  }
+
+  async getUsageSummary(): Promise<UsageSummaryResponse> {
+    return this.request<UsageSummaryResponse>('GET', '/api/usage/summary');
+  }
+
+  async getSecurityStatus(): Promise<{
+    agentsOnline: string;
+    policiesActive: number;
+    criticalAlerts: number;
+    healthScore: number;
+    generatedAt: string;
+  }> {
+    const [agents, policies, alerts] = await Promise.all([
+      this.agents.list(),
+      this.policies.list({ isActive: true }),
+      this.monitoring.getActiveAlerts(),
+    ]);
+    const totalAgents = agents.length;
+    const onlineAgents = agents.filter((agent: Agent) => {
+      const status = String(agent.status || '').toLowerCase();
+      return status === 'active' || status === 'online';
+    }).length;
+    const activePolicies = policies.filter((policy: Policy) => policy.isActive !== false).length;
+    const criticalAlerts = alerts.filter((alert: Alert) => String(alert.severity).toLowerCase() === 'critical').length;
+
+    return {
+      agentsOnline: `${onlineAgents}/${totalAgents}`,
+      policiesActive: activePolicies,
+      criticalAlerts,
+      healthScore: totalAgents === 0 ? 0 : Math.max(0, Math.min(100, Math.round((onlineAgents / totalAgents) * 100))),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   destroy(): void {
     this.removeAllListeners();
   }
 
-  // Convenience: quick setup flow for policies
-  async quickSetup(params: {
-    complianceFramework: string;
-    enforcementMode: 'observe' | 'enforce';
-    postQuantum: boolean;
-  }): Promise<any> {
-    const res = await this.client.post('/api/setup/quick', params);
-    return res.data;
-  }
-
-  // Convenience: fetch summarized security status
-  async getSecurityStatus(): Promise<any> {
-    const res = await this.client.get('/api/security/status');
-    return res.data;
-  }
-
-  // Convenience: health endpoint
-  async getHealth(): Promise<any> {
-    const res = await this.client.get('/api/health');
-    return res.data;
-  }
-
-  private _eventTimer?: ReturnType<typeof setInterval>;
-  subscribeToEvents(_topics?: string[]): void {
-    if (this._eventTimer) return;
-    this._eventTimer = setInterval(() => {
-      // no-op polling placeholder
-    }, 30000);
-  }
-
-  unsubscribe(): void {
-    if (this._eventTimer) {
-      clearInterval(this._eventTimer);
-      this._eventTimer = undefined;
+  private applyAuth(headers: HeaderRecord): void {
+    if (this.authToken) {
+      headers.Authorization = `Bearer ${this.authToken}`;
     }
+
+    const cookieHeader = this.resolveCookieHeader();
+    if (cookieHeader) {
+      headers.Cookie = cookieHeader;
+    }
+  }
+
+  private resolveCookieHeader(): string | undefined {
+    if (this.sessionCookie) {
+      return this.sessionCookie;
+    }
+    if (!this.sessionToken) {
+      return undefined;
+    }
+    const cookieName = this.useSecureSessionCookie
+      ? '__Secure-next-auth.session-token'
+      : 'next-auth.session-token';
+    return `${cookieName}=${this.sessionToken}`;
+  }
+
+  private async executeWithRetry<T>(
+    requestConfig: AxiosRequestConfig,
+    retryable: boolean
+  ): Promise<T> {
+    let attempt = 0;
+    while (attempt <= this.maxRetries) {
+      try {
+        const response = await this.client.request<T>(requestConfig);
+        return response.data;
+      } catch (error) {
+        const axiosError = error as AxiosError;
+        const status = axiosError.response?.status;
+        const shouldRetry =
+          retryable &&
+          attempt < this.maxRetries &&
+          (status === undefined || RETRYABLE_STATUS_CODES.has(status));
+
+        if (!shouldRetry) {
+          throw createErrorFromResponse(axiosError.response?.data || axiosError.message, status);
+        }
+
+        const delayMs = this.computeRetryDelayMs(attempt, axiosError);
+        await sleep(delayMs);
+        attempt += 1;
+      }
+    }
+
+    throw createErrorFromResponse('Request failed after retry budget exhausted');
+  }
+
+  private computeRetryDelayMs(attempt: number, error: AxiosError): number {
+    const retryAfterHeader = error.response?.headers?.['retry-after'];
+    const retryAfterMs = this.parseRetryAfterMs(Array.isArray(retryAfterHeader) ? retryAfterHeader[0] : retryAfterHeader);
+    if (retryAfterMs !== undefined) {
+      return retryAfterMs;
+    }
+    const exponential = this.retryMinDelayMs * Math.pow(2, attempt);
+    const jitter = Math.floor(Math.random() * 100);
+    return Math.min(this.retryMaxDelayMs, exponential + jitter);
+  }
+
+  private parseRetryAfterMs(retryAfter: string | number | null | undefined): number | undefined {
+    if (retryAfter === undefined || retryAfter === null) {
+      return undefined;
+    }
+    if (typeof retryAfter === 'number' && Number.isFinite(retryAfter)) {
+      return Math.max(0, Math.round(retryAfter * 1000));
+    }
+    const raw = String(retryAfter).trim();
+    if (!raw) {
+      return undefined;
+    }
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds)) {
+      return Math.max(0, Math.round(seconds * 1000));
+    }
+    const date = Date.parse(raw);
+    if (Number.isNaN(date)) {
+      return undefined;
+    }
+    return Math.max(0, date - Date.now());
   }
 }
 
-// Export for backward compatibility
 export { VeliKeySDK as VeliKeyClient };
 export const Client = VeliKeySDK;
-
-// Minimal PolicyBuilder to satisfy tests
-export class PolicyBuilder {
-  public rules: any;
-  private enforcement_mode: 'observe' | 'enforce' = 'observe';
-  private http: { post: (path: string, body: any) => Promise<{ data: any }> } | null;
-
-  constructor(http?: any) {
-    this.http = http || null;
-    this.rules = {
-      compliance_standard: '',
-      aegis: { pq_ready: [] as string[] },
-    };
-  }
-
-  complianceStandard(name: string): PolicyBuilder {
-    this.rules.compliance_standard = name;
-    return this;
-  }
-
-  postQuantumReady(): PolicyBuilder {
-    if (!this.rules.aegis) this.rules.aegis = { pq_ready: [] };
-    if (!this.rules.aegis.pq_ready.includes('TLS_KYBER768_P256_SHA256')) {
-      this.rules.aegis.pq_ready.push('TLS_KYBER768_P256_SHA256');
-    }
-    return this;
-  }
-
-  enforcementMode(mode: 'observe' | 'enforce'): PolicyBuilder {
-    this.enforcement_mode = mode;
-    return this;
-  }
-
-  build(): any {
-    return { rules: this.rules, enforcement_mode: this.enforcement_mode };
-  }
-
-  async create(name: string, description: string): Promise<any> {
-    if (!this.http) throw new Error('HTTP client not provided');
-    const body = { name, description, rules: this.rules, enforcement_mode: this.enforcement_mode };
-    const res = await this.http.post('/api/policies', body);
-    return res.data;
-  }
-}
-
-// Default export
 export default VeliKeySDK;
-
-// Minimal React hook stub used in tests
-export function useVeliKey(apiKey: string) {
-  const client = new VeliKeySDK({ apiKey });
-  const loading = false;
-  const error = null;
-  const execute = async () => ({ ok: true });
-  return { client, loading, error, execute };
-}
