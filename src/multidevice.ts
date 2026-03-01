@@ -1,5 +1,3 @@
-import { randomBytes } from 'crypto';
-
 export interface RecoveryCode {
   code: string;
   createdAt: Date;

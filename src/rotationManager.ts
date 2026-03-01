@@ -34,7 +34,7 @@ export class RotationManager {
     await this.maybeRotate('fetch');
   }
 
-  private async maybeRotate(reason: 'open' | 'fetch'): Promise<void> {
+  private async maybeRotate(_reason: 'open' | 'fetch'): Promise<void> {
     const now = Date.now();
     const jitter = Math.floor(Math.random() * this.opts.jitterMs);
 
@@ -50,5 +50,4 @@ export class RotationManager {
     }
   }
 }
-
 
