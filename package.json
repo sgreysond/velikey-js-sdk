@@ -1,6 +1,6 @@
 {
   "name": "@velikey/sdk",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "VeliKey Axis JavaScript/TypeScript SDK for Aegis operator workflows",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -34,11 +34,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/velikey/velikey-js-sdk.git"
+    "url": "https://github.com/sgreysond/velikey-js-sdk.git"
   },
   "homepage": "https://velikey.com",
   "bugs": {
-    "url": "https://github.com/velikey/velikey-js-sdk/issues"
+    "url": "https://github.com/sgreysond/velikey-js-sdk/issues"
   },
   "engines": {
     "node": ">=18"
