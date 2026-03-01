@@ -8,7 +8,7 @@ JavaScript SDK for Axis control-plane APIs used by Aegis operator workflows.
 npm install @velikey/sdk
 
 # Fallback (works immediately from public GitHub source)
-npm install github:sgreysond/velikey-js-sdk#main
+npm install github:sgreysond/velikey-js-sdk#v0.2.1
 ```
 
 ## Authentication

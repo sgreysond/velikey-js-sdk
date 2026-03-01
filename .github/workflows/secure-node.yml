@@ -1,6 +1,9 @@
 name: Security - Node Install Guard
 
 on:
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
   push:
   pull_request:
 
