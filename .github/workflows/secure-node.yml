@@ -1,5 +1,25 @@
 name: Security - Node Install Guard
 
+# Audit every package.json in the repo for:
+#   - lifecycle hooks (preinstall, install, postinstall, prepare) that
+#     could run arbitrary code at install time.
+#   - network calls (curl, wget, http(s) URLs) embedded in npm scripts.
+#
+# Previously the inline `node -e '...'` had `\\s` and `\\/` in the
+# detection regex. With single-quoted shell + YAML block scalar, those
+# made it to node as literal `\\s` / `\\/`. JS regex parses `\\` as one
+# literal backslash, so the regex became:
+#
+#   /(curl\\s|wget\\s|https?:\\/\\/)/i
+#
+# which JS lexes as TWO regexes, the first one closing at the
+# `\\/` (backslash + slash → end-of-regex), and the second one's
+# trailing chars triggered "Invalid regular expression flags". The
+# script crashed before doing any work, failing the workflow.
+#
+# Rewritten using indexOf checks (no regex) for clarity + immunity to
+# escaping. Same semantics.
+
 on:
   schedule:
     - cron: '0 5 * * 1'
@@ -7,9 +27,13 @@ on:
   push:
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   guard:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,7 +56,7 @@ jobs:
               npm i --ignore-scripts --package-lock-only || true
               npm ci --ignore-scripts || true
             fi
-            node -e 'const fs=require("fs");const pkg=JSON.parse(fs.readFileSync("package.json","utf8"));const s=pkg.scripts||{};const bad=["preinstall","install","postinstall","prepare"].filter(k=>s[k]); if(bad.length){console.error("Blocked lifecycle scripts in", process.cwd(), ":", bad.join(",")); process.exit(1)}; const vals=Object.values(s).join(" || "); if(/(curl\\s|wget\\s|https?:\\/\\/)/i.test(vals)){console.error("Blocked network calls in npm scripts in", process.cwd()); process.exit(1)}; console.log("No dangerous lifecycle or network calls in npm scripts.")' || exit 1
+            node "${GITHUB_WORKSPACE}/.github/scripts/check-npm-scripts.js" || exit 1
             npm audit --omit=dev || true
             cd - >/dev/null
             echo "::endgroup::"
