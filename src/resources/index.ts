@@ -10,3 +10,16 @@ export { DiagnosticsResource } from './diagnostics';
 export { RolloutsResource } from './rollouts';
 export { TelemetryResource } from './telemetry';
 export { NotifierClient } from './notifier';
+export { GatewaysResource } from './gateways';
+export type {
+  Gateway,
+  GatewayList,
+  GatewayMode,
+  GatewayStatus,
+  GatewayTemplate,
+  InstallPlan,
+  InstallPlanInput,
+  RotateInput,
+  RotationResult,
+  RotationTarget,
+} from './gateways';

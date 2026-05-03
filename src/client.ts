@@ -18,6 +18,7 @@ import { ComplianceResource } from './resources/compliance';
 import { DiagnosticsResource } from './resources/diagnostics';
 import { RolloutsResource } from './resources/rollouts';
 import { TelemetryResource } from './resources/telemetry';
+import { GatewaysResource } from './resources/gateways';
 import { generateUUID, sleep } from './utils';
 
 const DEFAULT_BASE_URL = 'https://axis.velikey.com';
@@ -47,6 +48,7 @@ export class VeliKeySDK extends EventEmitter {
   public readonly diagnostics: DiagnosticsResource;
   public readonly rollouts: RolloutsResource;
   public readonly telemetry: TelemetryResource;
+  public readonly gateways: GatewaysResource;
 
   constructor(config: VeliKeyConfig) {
     super();
@@ -84,6 +86,7 @@ export class VeliKeySDK extends EventEmitter {
     this.diagnostics = new DiagnosticsResource();
     this.rollouts = new RolloutsResource(this);
     this.telemetry = new TelemetryResource(this);
+    this.gateways = new GatewaysResource(this);
   }
 
   async request<T = unknown>(
