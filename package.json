@@ -18,7 +18,9 @@
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
     "type-check": "tsc --noEmit",
     "docs": "typedoc src/index.ts",
-    "prepublishOnly": "npm run build && npm run test && npm run lint"
+    "prepublishOnly": "npm run build && npm run test && npm run lint",
+    "install:trusted": "npm rebuild @swc/core fsevents 2>/dev/null || npm rebuild @swc/core",
+    "ci:install": "npm ci && npm run install:trusted"
   },
   "keywords": [
     "cryptography",
