@@ -1,5 +1,18 @@
 name: Publish JavaScript SDK
 
+# npm publishes use OIDC Trusted Publisher (configured in npmjs.com
+# package settings; sub-claim restricted to
+# repo:sgreysond/velikey-js-sdk + workflow `.github/workflows/publish.yml`).
+# The OIDC flow gives us:
+#   - No standing NPM_TOKEN credential to exfiltrate
+#   - Automatic `npm provenance` attestation on every publish, so
+#     installers can verify the package came from this specific
+#     workflow run via `npm install --provenance`
+#
+# To rotate the trust relationship: change the Trusted Publisher
+# config at https://www.npmjs.com/package/@velikey/sdk/access (admin
+# auth required).
+
 on:
   release:
     types: [published]
@@ -9,6 +22,12 @@ on:
         description: 'Version to publish'
         required: true
         default: '0.1.0'
+
+# id-token is REQUIRED for OIDC Trusted Publishing.
+# contents:read is the default for actions/checkout.
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   test:
@@ -61,11 +80,32 @@ jobs:
     
     - name: Build package
       run: npm run build
-    
-    - name: Publish to npm
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      run: npm publish --access public
+
+    # Bump npm to >= 11.15.0 so `npm stage publish` is available.
+    # The version bundled with setup-node@v4 + node 20 may lag the
+    # latest release; staged publishing requires the May 2026 npm
+    # release.
+    - name: Bump npm CLI for staged publishing
+      run: npm install -g npm@latest
+
+    # OIDC Trusted Publishing — STAGE-ONLY mode. No NODE_AUTH_TOKEN
+    # required. The GHA OIDC token is exchanged for a short-lived
+    # npm stage-publish token by the registry.
+    #
+    # `npm stage publish` uploads the package to a per-package staging
+    # queue. The version is NOT publicly available until a human
+    # maintainer with 2FA runs `npm stage approve @velikey/sdk@<v>`
+    # or clicks Approve in the npmjs.com UI.
+    #
+    # This is the maximum-security posture: even a compromised CI
+    # run can at worst propose a publish; an attacker would need to
+    # ALSO compromise a maintainer's 2FA device to push it to users.
+    #
+    # `--provenance` attaches a SLSA Build Level 3 attestation
+    # signed via Sigstore. Installers can verify via
+    # `npm install --provenance` once the version is approved.
+    - name: Stage publish to npm (OIDC + provenance + 2FA gate)
+      run: npm stage publish --access public --provenance
     
     - name: Create GitHub release artifacts
       uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5  # v3
@@ -87,8 +127,10 @@ jobs:
     
     - name: Install JSR CLI
       run: npm install -g @jsr/cli
-    
-    - name: Publish to JSR
-      env:
-        JSR_TOKEN: ${{ secrets.JSR_TOKEN }}
+
+    # JSR also supports OIDC publishing — the JSR CLI auto-detects
+    # GitHub Actions and exchanges the OIDC token for a publish
+    # token, same pattern as npm Trusted Publisher.
+    # The corresponding trusted-publisher config lives on jsr.io.
+    - name: Publish to JSR (OIDC)
       run: jsr publish
