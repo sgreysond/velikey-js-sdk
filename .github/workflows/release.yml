@@ -31,9 +31,18 @@ jobs:
       - run: npm ci
       - run: npm test --silent
       - run: npm run build --if-present
-      - name: Publish (OIDC + provenance)
+
+      # Bump npm to >= 11.15.0 so `npm stage publish` is available.
+      - name: Bump npm CLI for staged publishing
         if: ${{ inputs.publish == 'true' }}
-        run: npm publish --access public --provenance
+        run: npm install -g npm@latest
+
+      # Stage-only OIDC publish: uploads to staging queue, requires
+      # a maintainer to approve via 2FA before reaching npm users.
+      # See publish.yml for the full explanation.
+      - name: Stage publish (OIDC + provenance + 2FA gate)
+        if: ${{ inputs.publish == 'true' }}
+        run: npm stage publish --access public --provenance
       - name: Dry-run artifact
         if: ${{ inputs.publish != 'true' }}
         run: |

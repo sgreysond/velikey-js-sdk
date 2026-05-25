@@ -81,13 +81,31 @@ jobs:
     - name: Build package
       run: npm run build
 
-    # OIDC Trusted Publishing: no NODE_AUTH_TOKEN required. The
-    # GitHub Actions OIDC token is automatically exchanged for a
-    # short-lived npm publish token by the registry on each publish.
+    # Bump npm to >= 11.15.0 so `npm stage publish` is available.
+    # The version bundled with setup-node@v4 + node 20 may lag the
+    # latest release; staged publishing requires the May 2026 npm
+    # release.
+    - name: Bump npm CLI for staged publishing
+      run: npm install -g npm@latest
+
+    # OIDC Trusted Publishing — STAGE-ONLY mode. No NODE_AUTH_TOKEN
+    # required. The GHA OIDC token is exchanged for a short-lived
+    # npm stage-publish token by the registry.
+    #
+    # `npm stage publish` uploads the package to a per-package staging
+    # queue. The version is NOT publicly available until a human
+    # maintainer with 2FA runs `npm stage approve @velikey/sdk@<v>`
+    # or clicks Approve in the npmjs.com UI.
+    #
+    # This is the maximum-security posture: even a compromised CI
+    # run can at worst propose a publish; an attacker would need to
+    # ALSO compromise a maintainer's 2FA device to push it to users.
+    #
     # `--provenance` attaches a SLSA Build Level 3 attestation
-    # signed via Sigstore so installers can verify the build origin.
-    - name: Publish to npm (OIDC + provenance)
-      run: npm publish --access public --provenance
+    # signed via Sigstore. Installers can verify via
+    # `npm install --provenance` once the version is approved.
+    - name: Stage publish to npm (OIDC + provenance + 2FA gate)
+      run: npm stage publish --access public --provenance
     
     - name: Create GitHub release artifacts
       uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5  # v3
