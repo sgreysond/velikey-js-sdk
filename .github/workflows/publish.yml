@@ -1,5 +1,18 @@
 name: Publish JavaScript SDK
 
+# npm publishes use OIDC Trusted Publisher (configured in npmjs.com
+# package settings; sub-claim restricted to
+# repo:sgreysond/velikey-js-sdk + workflow `.github/workflows/publish.yml`).
+# The OIDC flow gives us:
+#   - No standing NPM_TOKEN credential to exfiltrate
+#   - Automatic `npm provenance` attestation on every publish, so
+#     installers can verify the package came from this specific
+#     workflow run via `npm install --provenance`
+#
+# To rotate the trust relationship: change the Trusted Publisher
+# config at https://www.npmjs.com/package/@velikey/sdk/access (admin
+# auth required).
+
 on:
   release:
     types: [published]
@@ -9,6 +22,12 @@ on:
         description: 'Version to publish'
         required: true
         default: '0.1.0'
+
+# id-token is REQUIRED for OIDC Trusted Publishing.
+# contents:read is the default for actions/checkout.
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   test:
@@ -61,11 +80,14 @@ jobs:
     
     - name: Build package
       run: npm run build
-    
-    - name: Publish to npm
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      run: npm publish --access public
+
+    # OIDC Trusted Publishing: no NODE_AUTH_TOKEN required. The
+    # GitHub Actions OIDC token is automatically exchanged for a
+    # short-lived npm publish token by the registry on each publish.
+    # `--provenance` attaches a SLSA Build Level 3 attestation
+    # signed via Sigstore so installers can verify the build origin.
+    - name: Publish to npm (OIDC + provenance)
+      run: npm publish --access public --provenance
     
     - name: Create GitHub release artifacts
       uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5  # v3

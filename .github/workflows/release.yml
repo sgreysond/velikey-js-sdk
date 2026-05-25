@@ -1,14 +1,23 @@
 name: Release (npm)
 
+# Manual-dispatch release path. Publishes via npm Trusted Publisher
+# (OIDC) — no NPM_TOKEN is required. See publish.yml for the full
+# explanation; both workflows are registered as trusted publishers
+# on the @velikey/sdk package.
+
 on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish to npm (requires NPM_TOKEN)"
+        description: "Publish to npm (OIDC + provenance — no token needed)"
         required: true
         default: "false"
         type: choice
         options: ["false", "true"]
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   release:
@@ -22,13 +31,9 @@ jobs:
       - run: npm ci
       - run: npm test --silent
       - run: npm run build --if-present
-      - name: Publish (guarded)
+      - name: Publish (OIDC + provenance)
         if: ${{ inputs.publish == 'true' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NODE_AUTH_TOKEN}" ]; then echo "NPM_TOKEN missing, aborting"; exit 1; fi
-          npm publish --access public
+        run: npm publish --access public --provenance
       - name: Dry-run artifact
         if: ${{ inputs.publish != 'true' }}
         run: |
