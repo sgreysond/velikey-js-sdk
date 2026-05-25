@@ -109,8 +109,10 @@ jobs:
     
     - name: Install JSR CLI
       run: npm install -g @jsr/cli
-    
-    - name: Publish to JSR
-      env:
-        JSR_TOKEN: ${{ secrets.JSR_TOKEN }}
+
+    # JSR also supports OIDC publishing — the JSR CLI auto-detects
+    # GitHub Actions and exchanges the OIDC token for a publish
+    # token, same pattern as npm Trusted Publisher.
+    # The corresponding trusted-publisher config lives on jsr.io.
+    - name: Publish to JSR (OIDC)
       run: jsr publish
